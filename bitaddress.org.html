@@ -5427,26 +5427,58 @@ Bitcoin.Util = {
 		var PBKDF2_opts = { iterations: 1, hasher: Crypto.SHA256, asBytes: true };
 
 		var B = Crypto.PBKDF2(passwd, salt, p * 128 * r, PBKDF2_opts);
+		var B32 = convert_to_i32a(B);
 		scryptCore();
+		convert_from_i32a(B32, B);
 		callback(Crypto.PBKDF2(passwd, B, dkLen, PBKDF2_opts));
+
+		// Do a little-endian conversion from the given Uint8Array.
+		function convert_to_i32a(ui8a) {
+			var inl = ui8a.length;
+			var outl = Math.ceil(inl/4);
+			var out = new Int32Array(outl);
+
+			var o = 0;
+			for (var i = 0; i < inl; ) {
+				var tmp = 0;
+				var shift = 0;
+				while (i < inl) {
+					tmp |= (ui8a[i++] << shift);
+					shift += 8;
+				}
+				out[o++] = tmp;
+			}
+			return out;
+		}
+
+		// Do a little-endian conversion back out to Int32Array.
+		function convert_from_i32a(i32a, ui8a) {
+			var shift = 0;
+			var j = 0;
+			for (var i = 0; i < ui8a.length; i++) {
+				ui8a[i] = (i32a[j] >> shift) & 0xff;
+				shift += 8;
+				if (shift == 32) {
+					shift = 0;
+					j++;	
+				}
+			}
+		}
 
 		// using this function to enclose everything needed to create a worker (but also invokable directly for synchronous use)
 		function scryptCore() {
-			var XY = new Uint8Array(64*4*r);
-			var V = new Uint8Array(32*4*r*N);
+			var XY = new Int32Array(64*r);
+			var V = new Int32Array(32*r*N);
 			for (var i = 0; i < p; i++) {
-				smix(B, i * 128 * r, r, N, V, XY);
+				smix(B, i * 32 * r, r, N, V, XY);
 			}
 
 			function smix(B, Bi, r, N, V, XY) {
 				var Xi = 0;
-				var Yi = 128 * r;
+				var Yi = 32 * r;
 				var i;
 
-				console.log("A");
-
 				arraycopy32(B, Bi, XY, Xi, Yi);
-				console.log("B");
 
 				for (i = 0; i < N; i++) {
 					if (i % 1024 == 0) {
@@ -5474,59 +5506,45 @@ Bitcoin.Util = {
 				var X = [];
 				var i;
 
-				arraycopy32(BY, Bi + (2 * r - 1) * 64, X, 0, 64);
+				arraycopy32(BY, Bi + (2 * r - 1) * 16, X, 0, 16);
 
 				for (i = 0; i < 2 * r; i++) {
-					blockxor(BY, i * 64, X, 0, 64);
+					blockxor(BY, i * 16, X, 0, 16);
 					salsa20_8(X);
-					arraycopy32(X, 0, BY, Yi + (i * 64), 64);
+					arraycopy32(X, 0, BY, Yi + (i * 16), 16);
 				}
 
 				for (i = 0; i < r; i++) {
-					arraycopy32(BY, Yi + (i * 2) * 64, BY, Bi + (i * 64), 64);
+					arraycopy32(BY, Yi + (i * 2) * 16, BY, Bi + (i * 16), 16);
 				}
 
 				for (i = 0; i < r; i++) {
-					arraycopy32(BY, Yi + (i * 2 + 1) * 64, BY, Bi + (i + r) * 64, 64);
+					arraycopy32(BY, Yi + (i * 2 + 1) * 16, BY, Bi + (i + r) * 16, 16);
 				}
 			}
 
-			function R(a, b) {
-				return (a << b) | (a >>> (32 - b));
-			}
-
-			function salsa20_8(B) {
-				var B32 = new Int32Array(16);
+			function salsa20_8(B32) {
 				var x = new Int32Array(16);
 				var i;
 				var u;
 				var x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15;
 
-				for (i = 0; i < 16; i++) {
-					B32[i] = (B[i * 4 + 0] & 0xff) << 0;
-					B32[i] |= (B[i * 4 + 1] & 0xff) << 8;
-					B32[i] |= (B[i * 4 + 2] & 0xff) << 16;
-					B32[i] |= (B[i * 4 + 3] & 0xff) << 24;
-				}
-
-				arraycopy(B32, 0, x, 0, 16);
-
-				x0  = x[0]  | 0 ;
-				x1  = x[1]  | 0 ;
-				x2  = x[2]  | 0 ;
-				x3  = x[3]  | 0 ;
-				x4  = x[4]  | 0 ;
-				x5  = x[5]  | 0 ;
-				x6  = x[6]  | 0 ;
-				x7  = x[7]  | 0 ;
-				x8  = x[8]  | 0 ;
-				x9  = x[9]  | 0 ;
-				x10 = x[10] | 0 ;
-				x11 = x[11] | 0 ;
-				x12 = x[12] | 0 ;
-				x13 = x[13] | 0 ;
-				x14 = x[14] | 0 ;
-				x15 = x[15] | 0 ;
+				x0  = B32[0]  | 0 ;
+				x1  = B32[1]  | 0 ;
+				x2  = B32[2]  | 0 ;
+				x3  = B32[3]  | 0 ;
+				x4  = B32[4]  | 0 ;
+				x5  = B32[5]  | 0 ;
+				x6  = B32[6]  | 0 ;
+				x7  = B32[7]  | 0 ;
+				x8  = B32[8]  | 0 ;
+				x9  = B32[9]  | 0 ;
+				x10 = B32[10] | 0 ;
+				x11 = B32[11] | 0 ;
+				x12 = B32[12] | 0 ;
+				x13 = B32[13] | 0 ;
+				x14 = B32[14] | 0 ;
+				x15 = B32[15] | 0 ;
 
 				for (i = 8; i > 0; i -= 2) {
 					 u = (x0  + x12) | 0 ;   x4  ^= (u<<7)  | (u>>>25)
@@ -5563,67 +5581,27 @@ Bitcoin.Util = {
 				     u = (x14 + x13) | 0 ;   x15 ^= (u<<18) | (u>>>14)
 				}
 
-				x[0] = x0;
-				x[1] = x1;
-				x[2] = x2;
-				x[3] = x3;
-				x[4] = x4;
-				x[5] = x5;
-				x[6] = x6;
-				x[7] = x7;
-				x[8] = x8;
-				x[9] = x9;
-				x[10] = x10;
-				x[11] = x11;
-				x[12] = x12;
-				x[13] = x13;
-				x[14] = x14;
-				x[15] = x15;
-
-				for (i = 0; i < 16; ++i) B32[i] = x[i] + B32[i];
-
-				for (i = 0; i < 16; i++) {
-					var bi = i * 4;
-					B[bi + 0] = (B32[i] >> 0 & 0xff);
-					B[bi + 1] = (B32[i] >> 8 & 0xff);
-					B[bi + 2] = (B32[i] >> 16 & 0xff);
-					B[bi + 3] = (B32[i] >> 24 & 0xff);
-				}
+				B32[0]  += x0;
+				B32[1]  += x1;
+				B32[2]  += x2;
+				B32[3]  += x3;
+				B32[4]  += x4;
+				B32[5]  += x5;
+				B32[6]  += x6;
+				B32[7]  += x7;
+				B32[8]  += x8;
+				B32[9]  += x9;
+				B32[10] += x10;
+				B32[11] += x11;
+				B32[12] += x12;
+				B32[13] += x13;
+				B32[14] += x14;
+				B32[15] += x15;
 			}
 
 			function blockxor(S, Si, D, Di, len) {
-				var i = len >> 6;
+				var i = len >> 4;
 				while (i--) {
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
-
 					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
 					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
 					D[Di++] ^= S[Si++]; D[Di++] ^= S[Si++];
@@ -5638,14 +5616,8 @@ Bitcoin.Util = {
 
 			function integerify(B, bi, r) {
 				var n;
-
-				bi += (2 * r - 1) * 64;
-
-				n = (B[bi + 0] & 0xff) << 0;
-				n |= (B[bi + 1] & 0xff) << 8;
-				n |= (B[bi + 2] & 0xff) << 16;
-				n |= (B[bi + 3] & 0xff) << 24;
-
+				bi += (2 * r - 1) * 16;
+				n = B[bi]
 				return n;
 			}
 
@@ -5656,23 +5628,8 @@ Bitcoin.Util = {
 			}
 
 			function arraycopy32(src, srcPos, dest, destPos, length) {
-				var i = length >> 5;
+				var i = length >> 3;
 				while (i--) {
-					dest[destPos++] = src[srcPos++]; dest[destPos++] = src[srcPos++];
-					dest[destPos++] = src[srcPos++]; dest[destPos++] = src[srcPos++];
-					dest[destPos++] = src[srcPos++]; dest[destPos++] = src[srcPos++];
-					dest[destPos++] = src[srcPos++]; dest[destPos++] = src[srcPos++];
-
-					dest[destPos++] = src[srcPos++]; dest[destPos++] = src[srcPos++];
-					dest[destPos++] = src[srcPos++]; dest[destPos++] = src[srcPos++];
-					dest[destPos++] = src[srcPos++]; dest[destPos++] = src[srcPos++];
-					dest[destPos++] = src[srcPos++]; dest[destPos++] = src[srcPos++];
-
-					dest[destPos++] = src[srcPos++]; dest[destPos++] = src[srcPos++];
-					dest[destPos++] = src[srcPos++]; dest[destPos++] = src[srcPos++];
-					dest[destPos++] = src[srcPos++]; dest[destPos++] = src[srcPos++];
-					dest[destPos++] = src[srcPos++]; dest[destPos++] = src[srcPos++];
-
 					dest[destPos++] = src[srcPos++]; dest[destPos++] = src[srcPos++];
 					dest[destPos++] = src[srcPos++]; dest[destPos++] = src[srcPos++];
 					dest[destPos++] = src[srcPos++]; dest[destPos++] = src[srcPos++];
