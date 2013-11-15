@@ -41,9 +41,14 @@
 		var PBKDF2_opts = { iterations: 1, hasher: Crypto.SHA256, asBytes: true };
 
 		var B = Crypto.PBKDF2(passwd, salt, p * 128 * r, PBKDF2_opts);
+		console.log(B);
 		var B32 = convert_to_i32a(B);
+		console.log(B32);
 		scryptCore();
+		console.log(B32);
+		console.log(B);
 		convert_from_i32a(B32, B);
+		console.log(B);
 		callback(Crypto.PBKDF2(passwd, B, dkLen, PBKDF2_opts));
 
 		// Do a little-endian conversion from the given Uint8Array.
@@ -56,7 +61,7 @@
 			for (var i = 0; i < inl; ) {
 				var tmp = 0;
 				var shift = 0;
-				while (i < inl) {
+				while (i < inl && shift < 32) {
 					tmp |= (ui8a[i++] << shift);
 					shift += 8;
 				}
@@ -84,7 +89,7 @@
 			var XY = new Int32Array(64*r);
 			var V = new Int32Array(32*r*N);
 			for (var i = 0; i < p; i++) {
-				smix(B, i * 32 * r, r, N, V, XY);
+				smix(B32, i * 32 * r, r, N, V, XY);
 			}
 
 			function smix(B, Bi, r, N, V, XY) {
